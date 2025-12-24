@@ -122,14 +122,17 @@ async def on_message(message):
     elif any(word in normalized_message for word in ("smite", "σμαιτ")):
         jordan = await client.fetch_user(JORDAN_ID)
         await message.channel.send(f"{jordan.mention}, Πότε θα φτάσεις διαμοντ λουλουδένιε μου??")
+        return
 
     elif any(word in normalized_message for word in ("ζούγκλα", "ζουγκλα")):
         kara = await client.fetch_user(KARA_ID)
         await message.channel.send(f"{kara.mention}, ΑΚΑΛΑ")
+        return
 
     elif any(word in normalized_message for word in ("ντεβ")):
         dev = await client.fetch_user(DEV_ID)
         await message.channel.send(f"{dev.mention}, Σκουπίδι ντεβ δεν κάνεις για τίποτα, μακάρι ΔΥΠΑ και τα σχετικά. ΣΙΧΑΜΑ!!")
+        return
     # === !top <κατηγορία> ===
     elif content.startswith("!top "):
         parts = content.split()
