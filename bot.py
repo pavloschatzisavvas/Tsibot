@@ -84,25 +84,42 @@ async def on_message(message):
     normalized_message = normalize_text(message.content)
 
     for category, triggers in TRACKED_GROUPS.items():
-        if any(normalize_text(t) in normalized for t in triggers):
-            matched_items = [t for t in triggers if normalize_text(t) in normalized]
-            used_item = matched_items[0] if matched_items else "💬"
+        triggered = False
+        used_item = None
+
+        for t in triggers:
+            normalized_t = normalize_text(t)
+
+            # === EMOJI CHECK ===
+            if normalized_t == "":
+                if t in message.content:
+                    triggered = True
+                    used_item = t
+                    break
+            # === WORD CHECK ===
+            else:
+                if normalized_t in normalized:
+                    triggered = True
+                    used_item = t
+                    break
+
+        if triggered:
             stats.setdefault(category, {})
             stats[category][user_id] = stats[category].get(user_id, 0) + 1
 
-            # === Αν είναι κατηγορία money, ψάχνουμε για ποσά σε ευρώ ===
+            # === MONEY SUM ===
             if category == "money":
                 amounts = re.findall(r"(\d+(?:[.,]\d+)?)\s*(?:€|ευρω|euro)", normalized)
                 total = sum(float(a.replace(",", ".")) for a in amounts)
+
                 if total > 0:
                     stats.setdefault("money_sum", {})
                     stats["money_sum"][user_id] = stats["money_sum"].get(user_id, 0) + total
-                    print(f"{message.author.name} πρόσθεσε {total}€ (σύνολο {stats['money_sum'][user_id]}€)")
 
             save_data(stats)
-            print(f"{message.author.name} ενεργοποίησε {category} με {used_item}")
             await handle_trigger(message.channel, message.author, category, used_item)
             break
+
 
     content = message.content.lower().strip()
 
