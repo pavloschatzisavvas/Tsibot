@@ -146,7 +146,7 @@ async def on_message(message):
         await message.channel.send(f"{kara.mention}, ΑΚΑΛΑ")
         return
 
-    elif any(word in normalized_message for word in ("ντεβ")):
+    elif any(word in normalized_message for word in ("ντεβ",)):
         dev = await client.fetch_user(DEV_ID)
         await message.channel.send(f"{dev.mention}, Σκουπίδι ντεβ δεν κάνεις για τίποτα, μακάρι ΔΥΠΑ και τα σχετικά. ΣΙΧΑΜΑ!!")
         return
