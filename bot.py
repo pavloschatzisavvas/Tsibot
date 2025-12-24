@@ -11,6 +11,8 @@ TOKEN = "MTQzNjMwNzMyNTg1Mjk3NTEwNA.GW4yY0.b1L_nuZkclWXpthUIoPJy4ZH1D8PjJrbQW4ys
 TARGET_USER_ID = 462250676668334081  # <-- ID χρήστη που θα γίνεται mention
 DATA_FILE = "emoji_stats.json"
 JORDAN_ID = 559721059302113285
+KARA_ID = 373217412964679681
+DEV_ID = 371439997410213889
 
 webserver.keep_alive()
 
@@ -117,9 +119,17 @@ async def on_message(message):
             else:
                 await message.channel.send(f"❌ Δεν υπάρχει κατηγορία '{category}'.")
 
-    elif content.startswith("smite","σμαιτ"):
+    elif content.startswith(("smite","σμαιτ")):
         jordan = await client.fetch_user(JORDAN_ID)
         await message.channel.send(f"{jordan.mention}, Πότε θα φτάσεις διαμοντ λουλουδένιε μου??")
+
+    elif content.startswith(("ζουγκλα","ζούγκλα")):
+        kara = await client.fetch_user(KARA_ID)
+        await message.channel.send(f"{kara.mention}, ΑΚΑΛΑ")
+
+    elif content.startswith(("ντεβ")):
+        dev = await client.fetch_user(DEV_ID)
+        await message.channel.send(f"{dev.mention}, Σκουπίδι ντεβ δεν κάνεις για τίποτα, μακάρι ΔΥΠΑ και τα σχετικά. ΣΙΧΑΜΑ!!")
     # === !top <κατηγορία> ===
     elif content.startswith("!top "):
         parts = content.split()
