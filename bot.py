@@ -51,6 +51,17 @@ def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+def contains_word(text, words):
+    """
+    Επιστρέφει True αν βρεθεί ΟΛΟΚΛΗΡΗ λέξη (όχι μέρος άλλης)
+    """
+    for w in words:
+        pattern = rf"\b{re.escape(w)}\b"
+        if re.search(pattern, text):
+            return True
+    return False
+
+
 stats = load_data()
 # κρατάει χρόνο τελευταίου mention ανά κατηγορία και κανάλι
 last_mention_time = defaultdict(lambda: defaultdict(lambda: 0))
@@ -71,8 +82,11 @@ async def handle_trigger(channel, user, category, item):
         else:
             await channel.send(f"{target_user.mention}, παίχτηκε αρχηγική κίνηση!")
 
+
 # === MESSAGE TRIGGER ===
 @client.event
+
+
 async def on_message(message):
     if message.author.bot:
         return
@@ -136,17 +150,17 @@ async def on_message(message):
             else:
                 await message.channel.send(f"❌ Δεν υπάρχει κατηγορία '{category}'.")
 
-    elif any(word in normalized_message for word in ("smite", "σμαιτ")):
+    elif contains_word(normalized_message,["smite","σμαιτ"]):
         jordan = await client.fetch_user(JORDAN_ID)
         await message.channel.send(f"{jordan.mention}, Πότε θα φτάσεις διαμοντ λουλουδένιε μου??")
         return
 
-    elif any(word in normalized_message for word in ("ζούγκλα", "ζουγκλα")):
+    elif contains_word(normalized_message,["ζούγκλα","ζουγκλα"]):
         kara = await client.fetch_user(KARA_ID)
         await message.channel.send(f"{kara.mention}, ΑΚΑΛΑ")
         return
 
-    elif any(word in normalized_message for word in ("ντεβ",)):
+    elif contains_word(normalized_message,["ντεβ"]):
         dev = await client.fetch_user(DEV_ID)
         await message.channel.send(f"{dev.mention}, Σκουπίδι ντεβ δεν κάνεις για τίποτα, μακάρι ΔΥΠΑ και τα σχετικά. ΣΙΧΑΜΑ!!")
         return
