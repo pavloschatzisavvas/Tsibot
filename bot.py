@@ -10,6 +10,7 @@ from collections import defaultdict
 TOKEN = "MTQzNjMwNzMyNTg1Mjk3NTEwNA.GW4yY0.b1L_nuZkclWXpthUIoPJy4ZH1D8PjJrbQW4ysI"
 TARGET_USER_ID = 462250676668334081  # <-- ID χρήστη που θα γίνεται mention
 DATA_FILE = "emoji_stats.json"
+JORDAN_ID = 559721059302113285
 
 webserver.keep_alive()
 
@@ -22,7 +23,7 @@ DEFAULT_COOLDOWN = 1 #1 * 60  # αν λείπει κάποια κατηγορί�
 
 # === ΚΑΤΗΓΟΡΙΕΣ ===
 TRACKED_GROUPS = {
-    "money": ["💸", "💵", "cash", "λεφτά", "ευρώ", "€", "αγορά"],
+    "money": ["💸", "💵", "cash", "λεφτά", "ευρώ", "€", "αγορά","χρήμα"],
     "χιαστι": ["αρχηγέ μου", "αρχηγέ"]
 }
 
@@ -116,6 +117,9 @@ async def on_message(message):
             else:
                 await message.channel.send(f"❌ Δεν υπάρχει κατηγορία '{category}'.")
 
+    elif content.startswith("smite","σμαιτ"):
+        jordan = await client.fetch_user(JORDAN_ID)
+        await message.channel.send(f"{jordan.mention}, Πότε θα φτάσεις διαμοντ λουλουδένιε μου??")
     # === !top <κατηγορία> ===
     elif content.startswith("!top "):
         parts = content.split()
