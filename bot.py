@@ -15,8 +15,6 @@ JORDAN_ID = 559721059302113285
 KARA_ID = 373217412964679681
 DEV_ID = 371439997410213889
 
-webserver.keep_alive()
-
 # === COOLDOWNS ===
 CATEGORY_COOLDOWNS = {
     "money": 15 * 60,
@@ -26,14 +24,17 @@ DEFAULT_COOLDOWN = 60
 
 # === ΚΑΤΗΓΟΡΙΕΣ ===
 TRACKED_GROUPS = {
-    "money": ["💸", "💵", "cash", "λεφτά", "ευρώ", "€", "αγορά", "χρήμα","ευρω","λεφτα","χρημα","αγορα"],
-    "χιαστι": ["αρχηγέ μου", "αρχηγέ","αρχηγε","αρχηγε μου"]
+    "money": ["💸", "💵", "cash", "λεφτά", "ευρώ", "€", "αγορά", "χρήμα", "ευρω", "λεφτα", "χρημα", "αγορα"],
+    "χιαστι": ["αρχηγέ μου", "αρχηγέ", "αρχηγε", "αρχηγε μου"]
 }
 
 # === DISCORD INIT ===
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
+
+# === USER CACHE ===
+cached_users = {}
 
 # === HELPERS ===
 def normalize_text(text):
@@ -66,7 +67,10 @@ async def handle_trigger(channel, category):
 
     if now - last_mention_time[category][channel_id] >= cooldown:
         last_mention_time[category][channel_id] = now
-        user = await client.fetch_user(TARGET_USER_ID)
+        user = cached_users.get("target")
+
+        if not user:
+            return
 
         if category == "money":
             await channel.send(f"{user.mention}, ρίξε μια ματιά!")
@@ -97,23 +101,26 @@ async def on_message(message):
 
     # === CUSTOM WORD TRIGGERS ===
     if any(match_word(normalized, w) for w in ("smite", "σμαιτ")):
-        jordan = await client.fetch_user(JORDAN_ID)
-        await message.channel.send(
-            f"{jordan.mention}, Πότε θα φτάσεις διαμοντ λουλουδένιε μου??"
-        )
+        jordan = cached_users.get("jordan")
+        if jordan:
+            await message.channel.send(
+                f"{jordan.mention}, Πότε θα φτάσεις διαμοντ λουλουδένιε μου??"
+            )
         return
 
     if any(match_word(normalized, w) for w in ("ζουγκλα", "ζούγκλα")):
-        kara = await client.fetch_user(KARA_ID)
-        await message.channel.send(f"{kara.mention}, ΑΚΑΛΑ")
+        kara = cached_users.get("kara")
+        if kara:
+            await message.channel.send(f"{kara.mention}, ΑΚΑΛΑ")
         return
 
     if match_word(normalized, "ντεβ"):
-        dev = await client.fetch_user(DEV_ID)
-        await message.channel.send(
-            f"{dev.mention}, Σκουπίδι ντεβ δεν κάνεις για τίποτα, "
-            f"μακάρι ΔΥΠΑ και τα σχετικά. ΣΙΧΑΜΑ!!"
-        )
+        dev = cached_users.get("dev")
+        if dev:
+            await message.channel.send(
+                f"{dev.mention}, Σκουπίδι ντεβ δεν κάνεις για τίποτα, "
+                f"μακάρι ΔΥΠΑ και τα σχετικά. ΣΙΧΑΜΑ!!"
+            )
         return
 
     # === COMMANDS ===
@@ -137,4 +144,11 @@ async def on_message(message):
 async def on_ready():
     print(f"✅ Συνδέθηκε ως {client.user}")
 
+    cached_users["target"] = await client.fetch_user(TARGET_USER_ID)
+    cached_users["jordan"] = await client.fetch_user(JORDAN_ID)
+    cached_users["kara"] = await client.fetch_user(KARA_ID)
+    cached_users["dev"] = await client.fetch_user(DEV_ID)
+
+# === START ===
+webserver.keep_alive()
 client.run(TOKEN)
