@@ -3,17 +3,17 @@ import json
 import time
 import unicodedata
 import re
-import webserver
 from collections import defaultdict
+from threading import Thread
+from flask import Flask
 
 # === ΡΥΘΜΙΣΕΙΣ ===
 TOKEN = "MTQzNjMwNzMyNTg1Mjk3NTEwNA.GW4yY0.b1L_nuZkclWXpthUIoPJy4ZH1D8PjJrbQW4ysI"
 TARGET_USER_ID = 462250676668334081
-DATA_FILE = "emoji_stats.json"
-
 JORDAN_ID = 559721059302113285
 KARA_ID = 373217412964679681
 DEV_ID = 371439997410213889
+DATA_FILE = "emoji_stats.json"
 
 # === COOLDOWNS ===
 CATEGORY_COOLDOWNS = {
@@ -24,26 +24,33 @@ DEFAULT_COOLDOWN = 60
 
 # === ΚΑΤΗΓΟΡΙΕΣ ===
 TRACKED_GROUPS = {
-    "money": ["💸", "💵", "cash", "λεφτά", "ευρώ", "€", "αγορά", "χρήμα", "ευρω", "λεφτα", "χρημα", "αγορα"],
-    "χιαστι": ["αρχηγέ μου", "αρχηγέ", "αρχηγε", "αρχηγε μου"]
+    "money": ["💸", "💵", "cash", "λεφτά", "ευρώ", "€", "αγορά","χρήμα"],
+    "χιαστι": ["αρχηγέ μου", "αρχηγέ"]
 }
 
-# === DISCORD INIT ===
+# === DISCORD BOT ===
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
 
-# === USER CACHE ===
-cached_users = {}
+# === FLASK SERVER ΓΙΑ KEEP-ALIVE ===
+app = Flask('')
 
-# === HELPERS ===
+@app.route('/')
+def home():
+    return "Bot is up!"
+
+def run():
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
+# === UTILS ===
 def normalize_text(text):
     nfkd_form = unicodedata.normalize("NFD", text)
-    return "".join(c for c in nfkd_form if not unicodedata.combining(c)).lower()
-
-def match_word(text, word):
-    pattern = rf"\b{re.escape(word)}\b"
-    return re.search(pattern, text) is not None
+    return "".join([c for c in nfkd_form if not unicodedata.combining(c)]).lower()
 
 def load_data():
     try:
@@ -56,28 +63,36 @@ def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-stats = load_data()
-last_mention_time = defaultdict(lambda: defaultdict(lambda: 0))
+def contains_word(text, words):
+    for w in words:
+        pattern = rf"\b{re.escape(w)}\b"
+        if re.search(pattern, text):
+            return True
+    return False
 
-# === MENTION HANDLER ===
+# === DATA & COOLDOWN TRACKER ===
+stats = load_data()
+last_mention_time = defaultdict(lambda: defaultdict(lambda: 0))  # category -> channel -> timestamp
+
+# === HANDLE TRIGGER ΜΕ COOLDOWN ===
 async def handle_trigger(channel, category):
     now = time.time()
-    channel_id = channel.id
     cooldown = CATEGORY_COOLDOWNS.get(category, DEFAULT_COOLDOWN)
+    last_time = last_mention_time[category][channel.id]
 
-    if now - last_mention_time[category][channel_id] >= cooldown:
-        last_mention_time[category][channel_id] = now
-        user = cached_users.get("target")
-
-        if not user:
-            return
-
+    if now - last_time >= cooldown:
+        last_mention_time[category][channel.id] = now
+        target_user = await client.fetch_user(TARGET_USER_ID)
         if category == "money":
-            await channel.send(f"{user.mention}, ρίξε μια ματιά!")
+            await channel.send(f"{target_user.mention}, ρίξε μια ματιά!")
         else:
-            await channel.send(f"{user.mention}, παίχτηκε αρχηγική κίνηση!")
+            await channel.send(f"{target_user.mention}, παίχτηκε αρχηγική κίνηση!")
 
-# === MESSAGE EVENT ===
+# === DISCORD EVENTS ===
+@client.event
+async def on_ready():
+    print(f"✅ Συνδέθηκε ως {client.user}")
+
 @client.event
 async def on_message(message):
     if message.author.bot:
@@ -85,70 +100,102 @@ async def on_message(message):
 
     normalized = normalize_text(message.content)
     user_id = str(message.author.id)
+    content = message.content.lower().strip()
+    normalized_message = normalized
 
-    # === TRACKED GROUPS ===
+    # === TRIGGERS ===
     for category, triggers in TRACKED_GROUPS.items():
+        triggered = False
         for t in triggers:
-            if t in message.content or match_word(normalized, normalize_text(t)):
-                stats.setdefault(category, {})
-                stats[category][user_id] = stats[category].get(user_id, 0) + 1
-                save_data(stats)
-                await handle_trigger(message.channel, category)
+            normalized_t = normalize_text(t)
+            if normalized_t in normalized:
+                triggered = True
+                used_item = t
                 break
-        else:
-            continue
-        break
 
-    # === CUSTOM WORD TRIGGERS ===
-    if any(match_word(normalized, w) for w in ("smite", "σμαιτ")):
-        jordan = cached_users.get("jordan")
-        if jordan:
-            await message.channel.send(
-                f"{jordan.mention}, Πότε θα φτάσεις διαμοντ λουλουδένιε μου??"
-            )
-        return
+        if triggered:
+            stats.setdefault(category, {})
+            stats[category][user_id] = stats[category].get(user_id, 0) + 1
 
-    if any(match_word(normalized, w) for w in ("ζουγκλα", "ζούγκλα")):
-        kara = cached_users.get("kara")
-        if kara:
-            await message.channel.send(f"{kara.mention}, ΑΚΑΛΑ")
-        return
+            # === MONEY SUM ===
+            if category == "money":
+                amounts = re.findall(r"(\d+(?:[.,]\d+)?)\s*(?:€|ευρω|euro)", normalized)
+                total = sum(float(a.replace(",", ".")) for a in amounts)
+                if total > 0:
+                    stats.setdefault("money_sum", {})
+                    stats["money_sum"][user_id] = stats["money_sum"].get(user_id, 0) + total
 
-    if match_word(normalized, "ντεβ"):
-        dev = cached_users.get("dev")
-        if dev:
-            await message.channel.send(
-                f"{dev.mention}, Σκουπίδι ντεβ δεν κάνεις για τίποτα, "
-                f"μακάρι ΔΥΠΑ και τα σχετικά. ΣΙΧΑΜΑ!!"
-            )
-        return
+            save_data(stats)
+            await handle_trigger(message.channel, category)
+            break
 
     # === COMMANDS ===
-    content = message.content.lower().strip()
-
     if content.startswith("!stats "):
-        category = content.split()[1]
-        count = stats.get(category, {}).get(user_id, 0)
-        await message.channel.send(
-            f"📊 {message.author.name}, "
-            f"έχεις ενεργοποιήσει **{category}** {count} φορές!"
-        )
+        parts = content.split()
+        if len(parts) >= 2:
+            category = parts[1]
+            if category in stats:
+                count = stats[category].get(user_id, 0)
+                await message.channel.send(f"📊 {message.author.name}, έχεις ενεργοποιήσει την κατηγορία **{category}** {count} φορές!")
+            else:
+                await message.channel.send(f"❌ Δεν υπάρχει κατηγορία '{category}'.")
+
+    elif content.startswith(("!λογιστης","!λογιστής")):
+        if "money_sum" in stats and stats["money_sum"]:
+            sorted_users = sorted(stats["money_sum"].items(), key=lambda x: x[1], reverse=True)
+            leaderboard = []
+            for i, (uid, total) in enumerate(sorted_users[:5], start=1):
+                user = await client.fetch_user(int(uid))
+                leaderboard.append(f"{i}. **{user.name}** — {total:.2f}€")
+            await message.channel.send(f"💰 **Ποιοι έχουν ξοδέψει τα περισσότερα:**\n" + "\n".join(leaderboard))
+        else:
+            await message.channel.send("📭 Δεν υπάρχουν ακόμα δεδομένα για ποσά σε ευρώ.")
 
     elif content.startswith("!categories"):
-        await message.channel.send(
-            f"📚 Διαθέσιμες κατηγορίες: {', '.join(TRACKED_GROUPS.keys())}"
-        )
+        categories = ", ".join(TRACKED_GROUPS.keys())
+        await message.channel.send(f"📚 Διαθέσιμες κατηγορίες: {categories}")
 
-# === READY ===
-@client.event
-async def on_ready():
-    print(f"✅ Συνδέθηκε ως {client.user}")
+    elif content.startswith("!top "):
+        parts = content.split()
+        if len(parts) >= 2:
+            category = parts[1]
+            if category in stats and stats[category]:
+                sorted_users = sorted(stats[category].items(), key=lambda x: x[1], reverse=True)
+                leaderboard = []
+                for i, (uid, count) in enumerate(sorted_users[:3], start=1):
+                    user = await client.fetch_user(int(uid))
+                    if i == 1:
+                        msg = f"🥇 **{user.name}** — {count} φορές!"
+                    elif i == 2:
+                        msg = f"🥈 **{user.name}** — {count} φορές!"
+                    else:
+                        msg = f"🥉 **{user.name}** — {count} φορές!"
+                    leaderboard.append(msg)
+                await message.channel.send(f"🏆 **Leaderboard για {category.upper()}:**\n" + "\n".join(leaderboard))
+            else:
+                await message.channel.send(f"❌ Δεν υπάρχουν δεδομένα για '{category}'.")
 
-    cached_users["target"] = await client.fetch_user(TARGET_USER_ID)
-    cached_users["jordan"] = await client.fetch_user(JORDAN_ID)
-    cached_users["kara"] = await client.fetch_user(KARA_ID)
-    cached_users["dev"] = await client.fetch_user(DEV_ID)
+    elif content.startswith("!removemoney"):
+        parts = content.split()
+        if not message.author.guild_permissions.administrator:
+            await message.channel.send("🚫 Μόνο διαχειριστές μπορούν να αφαιρέσουν χρήματα.")
+            return
+        if len(parts) < 3 or not message.mentions:
+            await message.channel.send("❌ Χρήση: `!removemoney @user ποσό`")
+            return
+        target_user = message.mentions[0]
+        try:
+            amount = float(parts[-1].replace(",", "."))
+        except:
+            await message.channel.send("❌ Το ποσό δεν είναι έγκυρο.")
+            return
+        target_id = str(target_user.id)
+        stats.setdefault("money_sum", {})
+        stats["money_sum"][target_id] = max(0, stats["money_sum"].get(target_id, 0) - amount)
+        save_data(stats)
+        await message.channel.send(f"💸 Αφαιρέθηκαν **{amount:.2f}€** από τον χρήστη **{target_user.name}**.\n📉 Νέο σύνολο: **{stats['money_sum'][target_id]:.2f}€**")
 
-# === START ===
-webserver.keep_alive()
-client.run(TOKEN)
+# === MAIN ===
+if __name__ == "__main__":
+    keep_alive()  # Flask server για Render
+    client.run(TOKEN)
