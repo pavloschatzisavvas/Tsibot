@@ -7,25 +7,22 @@ import webserver
 from collections import defaultdict
 
 # === ΡΥΘΜΙΣΕΙΣ ===
-TOKEN = "MTQzNjMwNzMyNTg1Mjk3NTEwNA.GMF_C7.cRT677u9UURJ1CD14c4J0thISx2VsIIs9jPfuk"
+TOKEN = "MTQzNjMwNzMyNTg1Mjk3NTEwNA.GW4yY0.b1L_nuZkclWXpthUIoPJy4ZH1D8PjJrbQW4ysI"
 TARGET_USER_ID = 462250676668334081  # <-- ID χρήστη που θα γίνεται mention
 DATA_FILE = "emoji_stats.json"
-JORDAN_ID = 559721059302113285
-KARA_ID = 373217412964679681
-DEV_ID = 371439997410213889
 
 webserver.keep_alive()
 
 # === COOLDOWNS ===
 CATEGORY_COOLDOWNS = {
     "money": 15 * 60,   # 15 λεπτά
-    "χιαστι": 3 * 60    # 3 λεπτά
+    "χιαστι": 3 * 60    # 3 λεπτάa
 }
 DEFAULT_COOLDOWN = 1 #1 * 60  # αν λείπει κάποια κατηγορία
 
 # === ΚΑΤΗΓΟΡΙΕΣ ===
 TRACKED_GROUPS = {
-    "money": ["💸", "💵", "cash", "λεφτά", "ευρώ", "€", "αγορά","χρήμα"],
+    "money": ["💸", "💵", "cash", "λεφτά", "ευρώ", "€", "αγορά"],
     "χιαστι": ["αρχηγέ μου", "αρχηγέ"]
 }
 
@@ -119,17 +116,6 @@ async def on_message(message):
             else:
                 await message.channel.send(f"❌ Δεν υπάρχει κατηγορία '{category}'.")
 
-    elif content.startswith(("smite","σμαιτ")):
-        jordan = await client.fetch_user(JORDAN_ID)
-        await message.channel.send(f"{jordan.mention}, Πότε θα φτάσεις διαμοντ λουλουδένιε μου??")
-
-    elif content.startswith(("ζουγκλα","ζούγκλα")):
-        kara = await client.fetch_user(KARA_ID)
-        await message.channel.send(f"{kara.mention}, ΑΚΑΛΑ")
-
-    elif content.startswith(("ντεβ")):
-        dev = await client.fetch_user(DEV_ID)
-        await message.channel.send(f"{dev.mention}, Σκουπίδι ντεβ δεν κάνεις για τίποτα, μακάρι ΔΥΠΑ και τα σχετικά. ΣΙΧΑΜΑ!!")
     # === !top <κατηγορία> ===
     elif content.startswith("!top "):
         parts = content.split()
