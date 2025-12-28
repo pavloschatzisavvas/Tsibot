@@ -3,6 +3,7 @@ import json
 import time
 import unicodedata
 import re
+import asyncio
 from collections import defaultdict
 from threading import Thread
 from flask import Flask
@@ -73,9 +74,14 @@ def contains_word(text, words):
 # === DATA & COOLDOWN TRACKER ===
 stats = load_data()
 last_mention_time = defaultdict(lambda: defaultdict(lambda: 0))  # category -> channel -> timestamp
+mention_lock = defaultdict(lambda: defaultdict(lambda: False))  # category -> channel -> lock
 
-# === HANDLE TRIGGER ΜΕ COOLDOWN ===
+# === HANDLE TRIGGER ΜΕ COOLDOWN & LOCK ===
 async def handle_trigger(channel, category):
+    if mention_lock[category][channel.id]:
+        return  # ήδη σε cooldown
+    mention_lock[category][channel.id] = True
+
     now = time.time()
     cooldown = CATEGORY_COOLDOWNS.get(category, DEFAULT_COOLDOWN)
     last_time = last_mention_time[category][channel.id]
@@ -87,6 +93,9 @@ async def handle_trigger(channel, category):
             await channel.send(f"{target_user.mention}, ρίξε μια ματιά!")
         else:
             await channel.send(f"{target_user.mention}, παίχτηκε αρχηγική κίνηση!")
+
+    await asyncio.sleep(cooldown)
+    mention_lock[category][channel.id] = False
 
 # === DISCORD EVENTS ===
 @client.event
@@ -101,18 +110,15 @@ async def on_message(message):
     normalized = normalize_text(message.content)
     user_id = str(message.author.id)
     content = message.content.lower().strip()
-    normalized_message = normalized
 
     # === TRIGGERS ===
     for category, triggers in TRACKED_GROUPS.items():
         triggered = False
         for t in triggers:
-            normalized_t = normalize_text(t)
-            if normalized_t in normalized:
+            if normalize_text(t) in normalized:
                 triggered = True
                 used_item = t
                 break
-
         if triggered:
             stats.setdefault(category, {})
             stats[category][user_id] = stats[category].get(user_id, 0) + 1
@@ -147,6 +153,7 @@ async def on_message(message):
             for i, (uid, total) in enumerate(sorted_users[:5], start=1):
                 user = await client.fetch_user(int(uid))
                 leaderboard.append(f"{i}. **{user.name}** — {total:.2f}€")
+                await asyncio.sleep(0.5)  # batch delay για rate limit
             await message.channel.send(f"💰 **Ποιοι έχουν ξοδέψει τα περισσότερα:**\n" + "\n".join(leaderboard))
         else:
             await message.channel.send("📭 Δεν υπάρχουν ακόμα δεδομένα για ποσά σε ευρώ.")
@@ -171,6 +178,7 @@ async def on_message(message):
                     else:
                         msg = f"🥉 **{user.name}** — {count} φορές!"
                     leaderboard.append(msg)
+                    await asyncio.sleep(0.5)  # delay για rate limit
                 await message.channel.send(f"🏆 **Leaderboard για {category.upper()}:**\n" + "\n".join(leaderboard))
             else:
                 await message.channel.send(f"❌ Δεν υπάρχουν δεδομένα για '{category}'.")
