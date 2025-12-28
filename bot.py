@@ -7,7 +7,7 @@ import webserver
 from collections import defaultdict
 
 # === ΡΥΘΜΙΣΕΙΣ ===
-TOKEN = "MTQzNjMwNzMyNTg1Mjk3NTEwNA.GW4yY0.b1L_nuZkclWXpthUIoPJy4ZH1D8PjJrbQW4ysI"
+TOKEN = "MTQzNjMwNzMyNTg1Mjk3NTEwNA.GMF_C7.cRT677u9UURJ1CD14c4J0thISx2VsIIs9jPfuk"
 TARGET_USER_ID = 462250676668334081  # <-- ID χρήστη που θα γίνεται mention
 DATA_FILE = "emoji_stats.json"
 
