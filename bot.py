@@ -1,17 +1,39 @@
 import discord
-import json
 import time
 import unicodedata
 import re
+import os
+import asyncio
 import webserver
 from collections import defaultdict
+from dotenv import load_dotenv
+from pymongo import AsyncMongoClient, ReturnDocument
 
 # === ΡΥΘΜΙΣΕΙΣ ===
-TOKEN = "MTQzNjMwNzMyNTg1Mjk3NTEwNA.GMF_C7.cRT677u9UURJ1CD14c4J0thISx2VsIIs9jPfuk"
+load_dotenv()
+
+TOKEN = os.getenv("DISCORD_TOKEN")
+if not TOKEN:
+    raise SystemExit(
+        "❌ Δεν βρέθηκε η μεταβλητή περιβάλλοντος DISCORD_TOKEN. "
+        "Δημιούργησε ένα αρχείο .env (δες το .env.example) και όρισε εκεί το DISCORD_TOKEN."
+    )
+
 TARGET_USER_ID = 462250676668334081  # <-- ID χρήστη που θα γίνεται mention
-DATA_FILE = "emoji_stats.json"
 
 webserver.keep_alive()
+
+# === MONGODB ===
+MONGODB_URI = os.getenv("MONGODB_URI")
+if not MONGODB_URI:
+    raise SystemExit(
+        "❌ Δεν βρέθηκε η μεταβλητή περιβάλλοντος MONGODB_URI. "
+        "Δημιούργησε ένα αρχείο .env (δες το .env.example) και όρισε εκεί το MONGODB_URI."
+    )
+
+mongo_client = AsyncMongoClient(MONGODB_URI)
+mongo_db = mongo_client["tsibot"]
+stats_collection = mongo_db["stats"]
 
 # === COOLDOWNS ===
 CATEGORY_COOLDOWNS = {
@@ -48,19 +70,52 @@ def normalize_text(text):
     nfkd_form = unicodedata.normalize("NFD", text)
     return "".join([c for c in nfkd_form if not unicodedata.combining(c)]).lower()
 
-# === LOAD/SAVE DATA ===
-def load_data():
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
+# === MONGODB DATA FUNCTIONS ===
+async def load_stats():
+    doc = await stats_collection.find_one({"_id": "global"})
+    if not doc:
         return {}
+    doc.pop("_id", None)
+    return doc
 
-def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+async def increment_stat(category, user_id, amount=1):
+    await stats_collection.update_one(
+        {"_id": "global"},
+        {"$inc": {f"{category}.{user_id}": amount}},
+        upsert=True
+    )
 
-stats = load_data()
+async def update_money(user_id, amount):
+    result = await stats_collection.find_one_and_update(
+        {"_id": "global"},
+        {"$inc": {f"money_sum.{user_id}": amount}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER
+    )
+    return result["money_sum"][user_id]
+
+async def remove_money(user_id, amount):
+    # atomic clamp-at-zero: new value = max(0, current - amount)
+    result = await stats_collection.find_one_and_update(
+        {"_id": "global"},
+        [
+            {
+                "$set": {
+                    "_id": "global",
+                    f"money_sum.{user_id}": {
+                        "$max": [
+                            0,
+                            {"$subtract": [{"$ifNull": [f"$money_sum.{user_id}", 0]}, amount]}
+                        ]
+                    }
+                }
+            }
+        ],
+        upsert=True,
+        return_document=ReturnDocument.AFTER
+    )
+    return result["money_sum"][user_id]
+
 last_mention_time = defaultdict(lambda: defaultdict(lambda: 0))
 
 # === MENTION ΜΕ COOLDOWN ===
@@ -96,19 +151,16 @@ async def on_message(message):
         if any(normalize_text(t) in normalized for t in triggers):
             matched_items = [t for t in triggers if normalize_text(t) in normalized]
             used_item = matched_items[0] if matched_items else "💬"
-            stats.setdefault(category, {})
-            stats[category][user_id] = stats[category].get(user_id, 0) + 1
+            await increment_stat(category, user_id, 1)
 
             # money category: track amounts
             if category == "money":
                 amounts = re.findall(r"(\d+(?:[.,]\d+)?)\s*(?:€|ευρω|euro)", normalized)
                 total = sum(float(a.replace(",", ".")) for a in amounts)
                 if total > 0:
-                    stats.setdefault("money_sum", {})
-                    stats["money_sum"][user_id] = stats["money_sum"].get(user_id, 0) + total
-                    print(f"{message.author.name} πρόσθεσε {total}€ (σύνολο {stats['money_sum'][user_id]}€)")
+                    new_sum = await update_money(user_id, total)
+                    print(f"{message.author.name} πρόσθεσε {total}€ (σύνολο {new_sum}€)")
 
-            save_data(stats)
             print(f"{message.author.name} ενεργοποίησε {category} με {used_item}")
             await handle_trigger(message.channel, category)
             break
@@ -121,8 +173,9 @@ async def on_message(message):
         parts = content.split()
         if len(parts) >= 2:
             category = parts[1]
-            if category in stats:
-                count = stats[category].get(user_id, 0)
+            data = await load_stats()
+            if category in data:
+                count = data[category].get(user_id, 0)
                 await message.channel.send(
                     f"📊 {message.author.name}, έχεις ενεργοποιήσει την κατηγορία **{category}** {count} φορές!"
                 )
@@ -134,8 +187,9 @@ async def on_message(message):
         parts = content.split()
         if len(parts) >= 2:
             category = parts[1]
-            if category in stats and stats[category]:
-                sorted_users = sorted(stats[category].items(), key=lambda x: x[1], reverse=True)
+            data = await load_stats()
+            if category in data and data[category]:
+                sorted_users = sorted(data[category].items(), key=lambda x: x[1], reverse=True)
                 leaderboard = []
                 for i, (uid, count) in enumerate(sorted_users[:3], start=1):
                     user = await get_target_user(int(uid))
@@ -163,8 +217,9 @@ async def on_message(message):
 
     # === !moneyboard ===
     elif content.startswith(("!λογιστης","!λογιστής")):
-        if "money_sum" in stats and stats["money_sum"]:
-            sorted_users = sorted(stats["money_sum"].items(), key=lambda x: x[1], reverse=True)
+        data = await load_stats()
+        if "money_sum" in data and data["money_sum"]:
+            sorted_users = sorted(data["money_sum"].items(), key=lambda x: x[1], reverse=True)
             leaderboard = []
             for i, (uid, total) in enumerate(sorted_users[:5], start=1):
                 user = await get_target_user(int(uid))
@@ -202,17 +257,30 @@ async def on_message(message):
             return
 
         target_id = str(target_user.id)
-        stats.setdefault("money_sum", {})
-        stats["money_sum"][target_id] = max(0, stats["money_sum"].get(target_id, 0) - amount)
-        save_data(stats)
+        new_total = await remove_money(target_id, amount)
 
         await message.channel.send(
             f"💸 Αφαιρέθηκαν **{amount:.2f}€** από τον χρήστη **{target_user.name}**.\n"
-            f"📉 Νέο σύνολο: **{stats['money_sum'][target_id]:.2f}€**"
+            f"📉 Νέο σύνολο: **{new_total:.2f}€**"
         )
 
 @client.event
 async def on_ready():
     print(f"✅ Συνδέθηκε ως {client.user}")
 
-client.run(TOKEN)
+# discord.Client δεν είναι subclassed εδώ, οπότε το setup_hook (καλείται μία
+# φορά πριν συνδεθεί στο gateway) περνάει ως instance attribute.
+async def setup_hook():
+    try:
+        await mongo_client.admin.command("ping")
+        print("✅ Επιτυχής σύνδεση με MongoDB")
+    except Exception:
+        print("❌ Αποτυχία σύνδεσης με MongoDB. Έλεγξε το MONGODB_URI στο .env.")
+        raise
+
+client.setup_hook = setup_hook
+
+try:
+    client.run(TOKEN)
+finally:
+    asyncio.run(mongo_client.close())
