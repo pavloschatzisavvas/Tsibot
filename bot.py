@@ -25,9 +25,9 @@ if not TOKEN:
 TARGET_USER_ID = 462250676668334081  # <-- ID χρήστη που θα γίνεται mention
 
 FURNOS_TARGET_USER_ID = 373217412964679681
-FURNOS_GIF_URL = "https://tenor.com/el/view/carlton-the-bear-bakery-pastries-food-tim-hortons-gif-27115405"
+FURNOS_GIF_URL = "https://klipy.com/gifs/carlton-the-bear-bakery"
 
-HOURLY_GIF_URL = "https://tenor.com/el/view/air-quotes-gif-1302731350283061839"
+HOURLY_GIF_URL = "https://klipy.com/gifs/air-quotes-9"
 HOURLY_GIF_CHANNEL_ID = 1176993664371785762
 
 webserver.keep_alive()
