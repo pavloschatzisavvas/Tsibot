@@ -6,6 +6,9 @@ import os
 import asyncio
 import webserver
 from collections import defaultdict
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from discord.ext import tasks
 from dotenv import load_dotenv
 from pymongo import AsyncMongoClient, ReturnDocument
 
@@ -20,6 +23,12 @@ if not TOKEN:
     )
 
 TARGET_USER_ID = 462250676668334081  # <-- ID χρήστη που θα γίνεται mention
+
+FURNOS_TARGET_USER_ID = 373217412964679681
+FURNOS_GIF_URL = "https://tenor.com/el/view/carlton-the-bear-bakery-pastries-food-tim-hortons-gif-27115405"
+
+HOURLY_GIF_URL = "https://tenor.com/el/view/air-quotes-gif-1302731350283061839"
+HOURLY_GIF_CHANNEL_ID = 1176993664371785762
 
 webserver.keep_alive()
 
@@ -69,6 +78,16 @@ async def get_target_user(user_id):
 def normalize_text(text):
     nfkd_form = unicodedata.normalize("NFD", text)
     return "".join([c for c in nfkd_form if not unicodedata.combining(c)]).lower()
+
+# === TRIGGER MATCHING (word-boundary safe) ===
+def trigger_matches(trigger, normalized_text):
+    normalized_trigger = normalize_text(trigger)
+    if re.search(r"\w", normalized_trigger, flags=re.UNICODE):
+        # κανονική λέξη/φράση: απαιτούνται όρια λέξης πριν/μετά ολόκληρο το trigger
+        pattern = r"(?<!\w)" + re.escape(normalized_trigger) + r"(?!\w)"
+        return re.search(pattern, normalized_text, flags=re.UNICODE) is not None
+    # emoji/σύμβολο (π.χ. 💸, 💵, €): απλός έλεγχος παρουσίας
+    return normalized_trigger in normalized_text
 
 # === MONGODB DATA FUNCTIONS ===
 async def load_stats():
@@ -146,11 +165,18 @@ async def on_message(message):
     user_id = str(message.author.id)
     target_phrase = normalize_text("αχα καλο ε")
 
+    # === !φουρνος ===
+    if trigger_matches("!φουρνος", normalized):
+        await message.channel.send(
+            f"<@{FURNOS_TARGET_USER_ID}>\n{FURNOS_GIF_URL}"
+        )
+        return
+
     # --- TRIGGERS ---
     for category, triggers in TRACKED_GROUPS.items():
-        if any(normalize_text(t) in normalized for t in triggers):
-            matched_items = [t for t in triggers if normalize_text(t) in normalized]
-            used_item = matched_items[0] if matched_items else "💬"
+        matched_items = [t for t in triggers if trigger_matches(t, normalized)]
+        if matched_items:
+            used_item = matched_items[0]
             await increment_stat(category, user_id, 1)
 
             # money category: track amounts
@@ -264,9 +290,48 @@ async def on_message(message):
             f"📉 Νέο σύνολο: **{new_total:.2f}€**"
         )
 
+# === ΠΡΟΓΡΑΜΜΑΤΙΣΜΕΝΟ GIF (καθημερινές, 11:00-17:00, Ελλάδα) ===
+last_hourly_gif_slot = None
+
+@tasks.loop(minutes=1)
+async def hourly_gif_task():
+    global last_hourly_gif_slot
+
+    now = datetime.now(ZoneInfo("Europe/Athens"))
+
+    if now.weekday() >= 5:  # Σάββατο/Κυριακή
+        return
+    if not (11 <= now.hour <= 17):
+        return
+    if now.minute != 0:
+        return
+
+    current_slot = now.strftime("%Y-%m-%d-%H")
+    if current_slot == last_hourly_gif_slot:
+        return
+
+    if HOURLY_GIF_CHANNEL_ID == 0:
+        return
+
+    try:
+        channel = client.get_channel(HOURLY_GIF_CHANNEL_ID)
+        if channel is None:
+            channel = await client.fetch_channel(HOURLY_GIF_CHANNEL_ID)
+
+        await channel.send(HOURLY_GIF_URL)
+        last_hourly_gif_slot = current_slot
+    except Exception as error:
+        print(f"Hourly GIF task error: {error}")
+
+@hourly_gif_task.before_loop
+async def before_hourly_gif_task():
+    await client.wait_until_ready()
+
 @client.event
 async def on_ready():
     print(f"✅ Συνδέθηκε ως {client.user}")
+    if not hourly_gif_task.is_running():
+        hourly_gif_task.start()
 
 # discord.Client δεν είναι subclassed εδώ, οπότε το setup_hook (καλείται μία
 # φορά πριν συνδεθεί στο gateway) περνάει ως instance attribute.
