@@ -28,6 +28,8 @@ FURNOS_TARGET_USER_ID = 373217412964679681
 FURNOS_GIF_URL = "https://klipy.com/gifs/carlton-the-bear-bakery"
 
 HOURLY_GIF_URL = "https://klipy.com/gifs/air-quotes-9"
+
+FURNOS_COOLDOWN = 15 * 60  # 15 λεπτά
 HOURLY_GIF_CHANNEL_ID = 1176993664371785762
 
 webserver.keep_alive()
@@ -167,9 +169,13 @@ async def on_message(message):
 
     # === !φουρνος ===
     if trigger_matches("!φουρνος", normalized):
-        await message.channel.send(
-            f"<@{FURNOS_TARGET_USER_ID}>\n{FURNOS_GIF_URL}"
-        )
+        now = time.time()
+        channel_id = message.channel.id
+        if now - last_mention_time["furnos"][channel_id] >= FURNOS_COOLDOWN:
+            last_mention_time["furnos"][channel_id] = now
+            await message.channel.send(
+                f"<@{FURNOS_TARGET_USER_ID}>\n{FURNOS_GIF_URL}"
+            )
         return
 
     # --- TRIGGERS ---
